@@ -1,6 +1,6 @@
 dumbpig
 =======
-An automated way to check for "dumb" snort rules.
+An automated way to check for "dumb" snort rules. (Originally written by Leon Ward)
 
 Requirements
 ------------
@@ -28,7 +28,7 @@ Usage
 ```
 $ perl dumbpig.pl
 
-DumbPig version 0.3 - leon@leonward.com
+DumbPig version 0.5 - (https://github.com/shirkdog/dumbpig)
       __,,    ( Dumb-pig says     )
     ~(  oo ---( "ur rulz r not so )
       ''''    ( gud akshuly" *    )
@@ -60,9 +60,9 @@ The output of dumbpig against a file with bad rules:
 ```
 $ perl dumbpig.pl -r bad.rules
 
-DumbPig version 0.2 - leon.ward@sourcefire.com
+DumbPig version 0.5 - (https://github.com/shirkdog/dumbpig)
       __,,    ( Dumb-pig says     )
-        ~(  oo ---( "ur rulz r not so )
+    ~(  oo ---( "ur rulz r not so )
       ''''    ( gud akshuly" *    )
 
 DumbPig Configuration
@@ -112,7 +112,6 @@ Issue 3
 =============================================================================
 --------------------------------------
 Total: 4 fails over 4 rules (8 lines) in bad.rules
-- Contact leon.ward@sourcefire.com
 ```
 
 License

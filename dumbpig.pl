@@ -1,7 +1,8 @@
 #!/usr/bin/env perl
 
 ###################################################
-# Copyright (C) 2010 Leon Ward
+# Copyright (C) 2010-2022 Leon Ward
+# Copyright (C) 2022 Michael Shirk
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -17,11 +18,12 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
-# Contact: leon@rm-rf.co.uk
+# Contact: https://www.github.com/shirkdog/dumbpig
 #
 # TODO  - Require msg
 # 	- Add resp keyword
 #	- Check for normalized data in content buffers where available (uri modifiers and uricontent)
+#	- Have configs read from snort.conf and classification.config
 
 use strict;
 use warnings;
@@ -35,7 +37,7 @@ my $rulefile=0;
 my $blacklist=0;
 my $verbose=0;
 my $level=4;
-my $version=0.3;
+my $version=0.5;
 my $censor=0;
 my $pause=0;
 my $write=0;
@@ -79,7 +81,10 @@ sub chk_ip{
 	if ( "$ip" eq "any") {
 		return("any");
 	} elsif ( "$ip" =~ m/^\$|^\!\$|^\[\$|\!\[\$/) {
-		return("var");
+		# If we have a VAR, check that it is a valid default ipvar
+		if ( "$ip" =~ m/((HOME|EXTERNAL)_NET)|((DNS|SMTP|HTTP|SQL|TELNET|SSH|FTP|SIP|AIM)_SERVERS)/) {
+			return("var");
+		}
 	} elsif ( "$ip" =~ m/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/) {
 		return("ip");
 	} else {
@@ -95,7 +100,10 @@ sub chk_pt{
 	if ( "$port" eq "any") {
 		return("any");
 	} elsif ( "$port" =~ m/^\$|^\!\$/) {
-		return("var");
+		# If we have a VAR, check that it is a valid default portvar
+		if ( "$port" =~ m/(HTTP|SHELLCODE|ORACLE|SSH|FTP|SIP|FILE_DATA|GTP)_PORTS/) {
+			return("var");
+		}
 	} elsif ( "$port" =~ m/\b\d{1,5}/) {
 		return("num");
 	} else {
@@ -103,6 +111,61 @@ sub chk_pt{
 		return(0);
 	}
 }
+
+sub chk_ct{
+		#Based on most recent classification config - laziness would load from file.
+		my @classtypeList=("not-suspicious",
+                "unknown",
+                "bad-unknown",
+                "attempted-recon",
+                "successful-recon-limited",
+                "successful-recon-largescale",
+                "attempted-dos",
+                "successful-dos",
+                "attempted-user",
+                "unsuccessful-user",
+                "successful-user",
+                "attempted-admin",
+                "successful-admin",
+                "rpc-portmap-decode",
+                "shellcode-detect",
+                "string-detect",
+                "suspicious-filename-detect",
+                "suspicious-login",
+                "system-call-detect",
+                "tcp-connection",
+                "trojan-activity",
+                "unusual-client-port-connection",
+                "network-scan",
+                "denial-of-service",
+                "non-standard-protocol",
+                "protocol-command-decode",
+                "web-application-activity",
+                "web-application-attack",
+                "misc-activity",
+                "misc-attack",
+                "icmp-event",
+                "inappropriate-content",
+                "policy-violation",
+                "default-login-attempt",
+                "sdf",
+                "file-format",
+                "malware-cnc",
+                "client-side-exploit");
+
+	my ($classtype)=shift;
+
+	my $error_check = 1;
+
+	for (my $i=0; $i<= $#classtypeList; $i++) {
+		if ($classtype =~ /$classtypeList[$i]/) {
+			#print "is $classtypeList[$i] equal to $classtype?\n";
+			$error_check=0;
+		}
+	}
+	return($error_check);
+}
+
 
 sub usage{
 	my $err=shift;
@@ -135,11 +198,11 @@ GetOptions (    'b|blacklist=s' => \$blacklist,
 );
 
 unless ( $q ) {
-	print "\nDumbPig version $version - leon\@leonward.com \n";
+	print "\nDumbPig version $version - https://www.github.com/shirkdog/dumbpig \n";
 	print "  	  __,,    ( Dumb-pig says     )
 	~(  oo ---( \"ur rulz r not so )
 	  ''''    ( gud akshuly\" *    )
-	 \n"; # Hey if pulled pork can have a pig, so can I :) -> http://code.google.com/p/pulledpork/
+	 \n"; # Hey if pulled pork can have a pig, so can Leon :) -> http://www.github.com/shirkdog/pulledpork/
 
 	print "DumbPig Configuration\n";
 	print "*********************************************\n";
@@ -154,7 +217,6 @@ unless ( $q ) {
 	print "* Quiet mode : Disabled \n";
 	print "*********************************************\n";
 }
-
 
 unless ($rulefile) { usage("Please specify a rules file"); }
 open RULEFILE, "$rulefile" or  die "Unable to open $rulefile\n";
@@ -334,7 +396,7 @@ while (my $line=<RULEFILE>) {
 			$src_addr=chk_ip("$rulehash->{'src'}");
 		} else {
 			$fail++;
-			push(@reason,"- Invalid src_addr $rulehash->{'src'}\n");
+			push(@reason,"- Invalid src_addr $rulehash->{'src'} (if this is an ipvar, ensure it appears in snort.conf)\n");
 		}
 
 		if ($censor) {
@@ -349,7 +411,7 @@ while (my $line=<RULEFILE>) {
 			$src_port=chk_pt("$rulehash->{'src_port'}");
 		} else {
 			$fail++;
-			push(@reason, "- Invalid src_port $rulehash->{'src_port'}\n");
+			push(@reason, "- Invalid src_port $rulehash->{'src_port'} (if this is a portvar, ensure it appears in snort.conf\n");
 		}
 		$display_head=$display_head . "$rulehash->{'src_port'} ";
 
@@ -367,7 +429,7 @@ while (my $line=<RULEFILE>) {
 			$dst_addr=chk_ip("$rulehash->{'dst'}");
 		} else {
 			$fail++;
-			push(@reason,"- Invalid dst_addr $rulehash->{'dst'}\n");
+			push(@reason,"- Invalid dst_addr $rulehash->{'dst'} (if this is an ipvar, ensure it appears in snort.conf)\n");
 		}
 		if ($censor) {
 			if ( "$dst_addr" eq "ip") {
@@ -381,10 +443,9 @@ while (my $line=<RULEFILE>) {
 			$dst_port=chk_pt("$rulehash->{'dst_port'}");
 		} else {
 			$fail++;
-			push(@reason, "- Invalid dst_port $rulehash->{'dst_port'}\n");
+			push(@reason, "- Invalid dst_port $rulehash->{'dst_port'} (if this is a portvar, ensure it appears in snort.conf\n");
 		}
 		$display_head=$display_head . "$rulehash->{'dst_port'} ";
-
 
 		if ($verbose) {
 			print "[v] ---- RULE Head ----\n";
@@ -490,6 +551,11 @@ while (my $line=<RULEFILE>) {
 			unless ( $hkeywords{'classtype'}) {
 				$fail++;
 				push (@reason, "- No classification specified - Please add a classtype to add correct priority rating\n");
+			}
+			my $classtypeCheck = chk_ct($hkeywords{'classtype'});
+			if (($hkeywords{'classtype'}) && ($classtypeCheck != 0)) {
+				$fail++;
+				push (@reason, "- Invalid classification specified ( $hkeywords{'classtype'} ) - Please add a correct classtype to add correct priority rating\n");
 			}
 
 			# unknown keyword
@@ -609,7 +675,7 @@ if ($blacklist) {
 	print "============================================\n";
 	print " Creating blacklist $blacklist\n";
 	open BLACKLIST,">","$blacklist" or die "Unable to open blacklist file $blacklist";
-	print BLACKLIST "# Autogenerated blacklist by DumbPig from $rulefile \n# Contact leon.ward\@sourcefire.com \n# For more information about dumbPig visit http://rm-rf.co.uk\n ";
+	print BLACKLIST "# Autogenerated blacklist by DumbPig from $rulefile \n# For more information about dumbPig visit https://www.github.com/shirkdog/dumbpig\n ";
 	foreach (@blackArray) {
 		print BLACKLIST "$_ \n";
 	}
@@ -618,4 +684,3 @@ if ($blacklist) {
 
 print "--------------------------------------\n";
 print "Total: $failnum fails over $rulecount rules ($linenum lines) in $rulefile\n";
-print "- Contact leon.ward\@sourcefire.com\n";
