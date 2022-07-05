@@ -165,8 +165,6 @@ sub chk_ct {
 
     for (my $i = 0; $i <= $#classtypeList; $i++) {
         if ($classtype =~ /$classtypeList[$i]/) {
-
-            #print "is $classtypeList[$i] equal to $classtype?\n";
             $error_check = 0;
         }
     }
